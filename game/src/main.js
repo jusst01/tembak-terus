@@ -337,12 +337,6 @@ function addSparks(point, n = 5) {
     sparks.push({ m, vx: (Math.random() - 0.5) * 2.4, vy: Math.random() * 2.4 + 0.5, vz: (Math.random() - 0.5) * 2.4, until: performance.now() + 330 });
   }
 }
-
-// --- Grenades -------------------------------------------------------------
-// A thrown frag is a small physics body: gravity, floor and wall bounces,
-// a fixed fuse, then area damage with distance falloff and a line-of-sight
-// check so solid cover genuinely protects. It damages every team, thrower
-// included — position your throw like it matters.
 function throwGrenade() {
   const p = player;
   if (!p.alive || game.phase !== 'live' || p.loadout.grenades <= 0) return false;
@@ -1081,5 +1075,3 @@ window.__TEMBAK_TEST__ = {
   scope(on) { rightMouseDown = !!on; if (on) player.loadout.current = 'needle'; return scoped; },
   look(yaw, pitch) { player.yaw = yaw; player.pitch = pitch; },
 };
-
-
