@@ -26,6 +26,7 @@ export class Actor {
     this.teamId = teamId; // 0: Ember, 1: Slate
     this.index = index;
     this.position = spawnPos.clone();
+    this.spawnPos = spawnPos.clone();
     this.rotation = teamId === 0 ? 0 : Math.PI;
 
     this.maxHp = 100;

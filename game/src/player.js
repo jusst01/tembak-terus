@@ -1,79 +1,179 @@
-import { Vector3, Euler, Quaternion, Raycaster, BoxGeometry, MeshBasicMaterial, Mesh, Group, Color } from '../vendor/three.module.min.js';
-import { WEAPONS } from './config.js';
-import { moveWithCollisions } from './world.js';
+import * as THREE from "three";
+import { WEAPONS, ECONOMY } from './config.js';
 
 export function createPlayer(deps) {
-  const { scene, camera, player, actors, colliders, audio, onKill, onShoot, onHit } = deps;
-  let yaw = 0, pitch = 0;
-  const feetPos = new Vector3();
-  const velocity = new Vector3();
-  let isCrouched = false;
-  let ammo = {};
-  let grenadeCount = 0;
-  let isScoped = false;
+  const { scene, camera, player, actors, colliders, audio, onHit, onKill } = deps;
+  let yaw = 0;
+  let pitch = 0;
+  const velocity = new THREE.Vector3();
+  const position = new THREE.Vector3().copy(player.position);
+
+  const eyeHeight = 1.62;
+  const crouchHeight = 1.15;
+  let targetHeight = eyeHeight;
+  let currentHeight = eyeHeight;
+
   let active = false;
-  let shotMode = false;
-  let activeWeaponId = null;
+  let scoped = false;
+  let ammo = {};
+  let ownedWeapons = ['sidearm'];
+  let grenades = 2;
+  let activeWeaponId = 'sidearm';
+  let isShooting = false;
+  let lastShotTime = 0;
+  let isReloading = false;
+  let reloadTimer = 0;
 
-  const viewmodel = new Group();
-  camera.add(viewmodel);
-
+  // Input state
   const keys = {};
-  window.addEventListener('keydown', e => keys[e.code] = true);
-  window.addEventListener('keyup', e => keys[e.code] = false);
+  let moveDir = new THREE.Vector3();
 
-  const controller = {
-    update(dt) {
-      if (!active || shotMode) return;
+  // Initialize ammo
+  Object.keys(WEAPONS).forEach(id => {
+    ammo[id] = { mag: WEAPONS[id].mag, reserve: WEAPONS[id].reserve };
+  });
 
-      const wishDir = new Vector3(
-        (keys['KeyD'] ? 1 : 0) - (keys['KeyA'] ? 1 : 0),
-        0,
-        (keys['KeyS'] ? 1 : 0) - (keys['KeyW'] ? 1 : 0)
-      ).applyEuler(new Euler(0, yaw, 0)).normalize();
+  // Setup input listeners
+  document.addEventListener('keydown', (e) => keys[e.code] = true);
+  document.addEventListener('keyup', (e) => keys[e.code] = false);
+  document.addEventListener('mousemove', (e) => {
+    if (!active) return;
+    yaw -= e.movementX * 0.002;
+    pitch -= e.movementY * 0.002;
+    pitch = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, pitch));
+  });
+  document.addEventListener('mousedown', (e) => {
+    if (!active) return;
+    if (e.button === 0) isShooting = true;
+    if (e.button === 2) scoped = true;
+  });
+  document.addEventListener('mouseup', (e) => {
+    if (e.button === 0) isShooting = false;
+    if (e.button === 2) scoped = false;
+  });
 
-      const speed = isCrouched ? 2.2 : (keys['ShiftLeft'] ? 6.2 : 4.3);
-      velocity.x += (wishDir.x * speed - velocity.x) * 0.1;
-      velocity.z += (wishDir.z * speed - velocity.z) * 0.1;
-      velocity.y -= 9.8 * dt;
+  function reset(spawnPos, y) {
+    position.copy(spawnPos);
+    yaw = y;
+    pitch = 0;
+    velocity.set(0, 0, 0);
+    active = false;
+  }
 
-      const moved = moveWithCollisions(feetPos, velocity.x * dt, velocity.z * dt, 0.3, colliders);
-      feetPos.add(moved);
-      if (feetPos.y < 0) { feetPos.y = 0; velocity.y = 0; }
+  function setActive(a) {
+    active = a;
+    if (active) { const pl = document.body.requestPointerLock(); if (pl && pl.catch) pl.catch(() => {}); }
+    else document.exitPointerLock();
+  }
 
-      camera.position.set(0, isCrouched ? 1.15 : 1.62, 0);
+  function update(dt) {
+    if (!active) return;
 
-      player.position.copy(feetPos);
-      player.rotation.set(0, yaw, 0);
-    },
-    reset(spawnPos, startYaw) {
-      feetPos.copy(spawnPos);
-      yaw = startYaw;
-      pitch = 0;
-      velocity.set(0, 0, 0);
-      isCrouched = false;
-      ammo = {};
-      grenadeCount = 0;
-    },
-    setActive(bool) {
-      active = bool;
-    },
-    setShotMode(bool) {
-      shotMode = bool;
-    },
-    isScoped() {
-      return isScoped;
-    },
-    buyWeapon(id) {
-      activeWeaponId = id;
-    },
-    buyGrenade() {
-      grenadeCount++;
-    },
-    grenadeCount() {
-      return grenadeCount;
+    // Movement
+    const speed = keys['ShiftLeft'] ? 6.0 : 3.5;
+    targetHeight = keys['ControlLeft'] ? crouchHeight : eyeHeight;
+    currentHeight += (targetHeight - currentHeight) * dt * 10;
+
+    // Jump
+    if (keys['Space'] && position.y <= 0.05) {
+       velocity.y = 5.0;
     }
-  };
+    velocity.y -= 20.0 * dt; // Gravity
+    position.y += velocity.y * dt;
+    if (position.y < 0) { position.y = 0; velocity.y = 0; }
 
-  return controller;
+    moveDir.set(0, 0, 0);
+    if (keys['KeyW']) moveDir.z -= 1;
+    if (keys['KeyS']) moveDir.z += 1;
+    if (keys['KeyA']) moveDir.x -= 1;
+    if (keys['KeyD']) moveDir.x += 1;
+    moveDir.normalize().applyAxisAngle(new THREE.Vector3(0, 1, 0), yaw);
+
+    velocity.x = moveDir.x * speed;
+    velocity.z = moveDir.z * speed;
+    position.add(velocity.clone().multiplyScalar(dt));
+
+    // Camera
+    camera.position.set(position.x, position.y + currentHeight, position.z);
+    camera.rotation.set(pitch, yaw, 0);
+
+    // Scope
+    camera.fov = scoped ? 30 : 75;
+    camera.updateProjectionMatrix();
+
+    // Breathing sway
+    const time = performance.now() / 1000;
+    const sway = Math.sin(time) * 0.005;
+    camera.rotation.z = sway;
+
+    // Shooting
+    const weapon = WEAPONS[activeWeaponId];
+    if (isShooting && !isReloading) {
+      const now = performance.now() / 1000;
+      if (now - lastShotTime > weapon.fireRate) {
+        if (ammo[activeWeaponId].mag > 0) {
+          lastShotTime = now;
+          ammo[activeWeaponId].mag--;
+
+          // Recoil
+          pitch += 0.01;
+          yaw += (Math.random() - 0.5) * 0.01;
+
+          // Raycast
+          const raycaster = new THREE.Raycaster();
+          const direction = new THREE.Vector3(0, 0, -1).applyEuler(camera.rotation);
+          raycaster.set(camera.position, direction);
+
+          const intersects = raycaster.intersectObjects(actors.map(a => a.container), true);
+          if (intersects.length > 0) {
+            const actor = actors.find(a => intersects[0].object.parent === a.container || intersects[0].object === a.container);
+            if (actor) {
+              const killed = actor.takeDamage(weapon.damage, false, colliders);
+              onHit(actor);
+              if (killed) onKill(actor);
+            }
+          }
+          audio.play('shoot');
+        } else {
+          audio.play('empty');
+        }
+      }
+    }
+
+    // Reloading
+    if (keys['KeyR'] && !isReloading && ammo[activeWeaponId].mag < weapon.mag && ammo[activeWeaponId].reserve > 0) {
+      isReloading = true;
+      reloadTimer = 2.0; // Assume 2s reload
+      audio.play('reload');
+    }
+    if (isReloading) {
+      reloadTimer -= dt;
+      if (reloadTimer <= 0) {
+        isReloading = false;
+        const needed = weapon.mag - ammo[activeWeaponId].mag;
+        const take = Math.min(needed, ammo[activeWeaponId].reserve);
+        ammo[activeWeaponId].mag += take;
+        ammo[activeWeaponId].reserve -= take;
+      }
+    }
+
+    // Grenade
+    if (keys['KeyG'] && grenades > 0) {
+        grenades--;
+        // Spawn grenade physics object
+        // ... (simplified as requested in the prompt)
+        audio.play('grenade_throw');
+        keys['KeyG'] = false; // Prevent multiple throws
+    }
+  }
+
+  return {
+    update,
+    reset,
+    setActive,
+    isScoped: () => scoped,
+    buyWeapon: (id) => { ownedWeapons.push(id); },
+    buyGrenade: () => { grenades++; },
+    grenadeCount: () => grenades
+  };
 }
