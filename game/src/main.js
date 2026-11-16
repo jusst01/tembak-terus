@@ -40,6 +40,7 @@ const game = {
 const keys = new Set();
 let mouseDown = false, rightMouseDown = false, semiLatch = false;
 let bobPhase = 0, viewKick = 0, scoped = false, damageFlashUntil = 0;
+let aiming = false, aimSpreadScale = 1, bloom = 0, noiseEvents = [];
 let lastHudSecond = -1;
 // Sniper scope state: zoom steps, a short un-scope beat while the bolt
 // cycles after a shot, and a breath meter for sway control.
@@ -415,6 +416,7 @@ function explodeGrenade(g) {
   const light = new THREE.PointLight(0xff8c42, 90, 17, 1.9);
   light.position.copy(at).y += 0.4; scene.add(light);
   explosions.push({ mesh, light, born: performance.now(), until: performance.now() + 300 });
+  noiseEvents.push({ x: at.x, z: at.z, r: 46, team: g.thrower.team, at: performance.now() / 1000 });
   addSparks(at, 18);
   const distToPlayer = at.distanceTo(player.pos);
   sfx.boom(distToPlayer);
@@ -539,8 +541,13 @@ function fireActor(actor, baseDir) {
   actor.nextShotAt = now + 60 / w.rpm;
   actor.lastShotAt = now;
   s.magazine--;
+
+  if (actor.isPlayer) bloom = Math.min(1, bloom + (w.id === 'shotgun' ? 0.3 : 0.16));
+
   const speed = Math.hypot(actor.ai?.vx || 0, actor.ai?.vz || 0);
-  const spread = w.spread + (speed > 0.6 ? w.movingSpread * Math.min(1, speed / 5) : 0) + (actor.ai?.crouching ? -w.spread * 0.3 : 0);
+  const bloomSpread = actor.isPlayer ? bloom * 0.02 : 0;
+  const spread = ((w.spread + (speed > 0.6 ? w.movingSpread * Math.min(1, speed / 5) : 0) + (actor.ai?.crouching ? -w.spread * 0.3 : 0)) + bloomSpread) * (actor.isPlayer ? aimSpreadScale : 1);
+
   const origin = actor.isPlayer ? camera.position.clone() : eyeOf(actor, sV).addScaledVector(forwardOf(actor, sV2), 0.42).add(sV3.set(0, -0.22, 0));
   const muzzle = actor.isPlayer ? camera.position.clone().addScaledVector(baseDir, 0.7) : origin.clone();
   let anyHit = false;
@@ -569,9 +576,15 @@ function fireActor(actor, baseDir) {
   }
   const distToPlayer = actor.pos.distanceTo(player.pos);
   sfx.shot(w.id, actor.isPlayer ? 0 : distToPlayer);
+
+  let r = (w.id === 'needle' || w.id === 'rifle') ? 34 : (w.id === 'smg' || w.id === 'sidearm') ? 26 : 40;
+  if (actor.isPlayer && (keys.has('AltLeft') || keys.has('AltRight'))) r /= 2;
+  noiseEvents.push({ x: actor.pos.x, z: actor.pos.z, r, team: actor.team, at: performance.now() / 1000 });
+
   if (actor.isPlayer) {
-    actor.pitch = Math.min(1.45, actor.pitch + w.recoil * 0.62);
-    viewKick = Math.min(0.09, viewKick + w.recoil * 1.9);
+    const recoilScale = aiming ? 0.85 : 1;
+    actor.pitch = Math.min(1.45, actor.pitch + w.recoil * 0.62 * recoilScale);
+    viewKick = Math.min(0.09, viewKick + w.recoil * 1.9 * recoilScale);
     // The Needle's bolt cycle drops you out of the scope for a beat after
     // every shot — you re-acquire the target instead of camping the glass.
     if (w.id === 'needle') scopeBlockUntil = performance.now() / 1000 + 0.55;
@@ -699,6 +712,15 @@ function updateBot(bot, dt, now) {
   if (now >= ai.thinkAt) {
     ai.thinkAt = now + 0.11 + Math.random() * 0.05;
     ai.target = visibleEnemy(bot);
+    if (!ai.target) {
+       for (const ev of noiseEvents) {
+         if (ev.team !== bot.team && now - ev.at < 1.2 && Math.hypot(ev.x - bot.pos.x, ev.z - bot.pos.z) < ev.r) {
+           ai.lastKnown = new THREE.Vector3(ev.x, 0, ev.z);
+           ai.lastSeenAt = now;
+           break;
+         }
+       }
+    }
     if (ai.target) { ai.lastSeenAt = now; ai.lastKnown = ai.target.pos.clone(); }
   }
   const target = ai.target && ai.target.alive && canSee(bot, ai.target) ? ai.target : null;
@@ -729,10 +751,7 @@ function updateBot(bot, dt, now) {
           ? sV5.set(target.pos.x, target.pos.y + 1.58, target.pos.z)
           : chestOf(target, sV5);
         let dir = sV4.subVectors(aimPoint, eyeOf(bot, sV3)).normalize();
-        // eyeOf(bot, sV4) is ok.
-        // Wait, eyeOf(bot, sV4) will write into sV4.
         // aimPoint uses sV4.
-        // This is tricky.
         const err = THREE.MathUtils.lerp(0.085, 0.024, Math.min(1, ai.aimTime / 0.9));
         dir = randomConeDirection(dir, err);
         bot.pitch = Math.asin(THREE.MathUtils.clamp(dir.y, -1, 1));
@@ -743,7 +762,6 @@ function updateBot(bot, dt, now) {
       }
     }
   } else {
-    // ... rest of the function
 
     let goal = botGoal(bot);
     if (ai.lastKnown && now - ai.lastSeenAt < 3.5) goal = ai.lastKnown;
@@ -777,8 +795,8 @@ function updatePlayer(dt) {
   let ix = (keys.has('KeyD') ? 1 : 0) - (keys.has('KeyA') ? 1 : 0);
   let iz = (keys.has('KeyW') ? 1 : 0) - (keys.has('KeyS') ? 1 : 0);
   const len = Math.hypot(ix, iz) || 1; ix /= len; iz /= len;
-  const sprint = (keys.has('ShiftLeft') || keys.has('ShiftRight')) && iz > 0 && !p.ai.crouching;
-  const speed = p.ai.crouching ? 2.55 : sprint ? 6.25 : 4.65;
+  const sprint = (keys.has('ShiftLeft') || keys.has('ShiftRight')) && iz > 0 && !p.ai.crouching && !aiming && !(keys.has('AltLeft') || keys.has('AltRight'));
+  const speed = (p.ai.crouching ? 2.55 : (keys.has('AltLeft') || keys.has('AltRight')) ? 2.1 : sprint ? 6.25 : 4.65) * (aiming ? 0.55 : 1);
   const f = forwardOf(p), r = new THREE.Vector3(Math.cos(p.yaw), 0, -Math.sin(p.yaw));
   const wish = new THREE.Vector3().addScaledVector(f, iz).addScaledVector(r, ix);
   if (wish.lengthSq() > 0) wish.normalize();
@@ -792,6 +810,11 @@ function updatePlayer(dt) {
   p.ai.vz = (p.pos.z - before.z) / Math.max(dt, 0.001);
   const hSpeed = Math.hypot(p.ai.vx, p.ai.vz);
   if (hSpeed > 0.4 && p.pos.y === 0) bobPhase += dt * hSpeed * 1.65;
+
+  aiming = rightMouseDown && p.alive && game.phase === 'live';
+  scoped = aiming && p.loadout.current === 'needle' && performance.now() / 1000 > scopeBlockUntil;
+  aimSpreadScale = (aiming && !scoped) ? 0.55 : 1;
+
   // Player trigger: automatic weapons continue while held; semi weapons need
   // a fresh click, which keeps the skill in the sidearm and scattergun.
   if (mouseDown && p.alive) {
@@ -800,14 +823,16 @@ function updatePlayer(dt) {
       const dir = new THREE.Vector3(); camera.getWorldDirection(dir);
       if (fireActor(p, dir)) semiLatch = true;
     }
-  } else semiLatch = false;
-  scoped = rightMouseDown && p.loadout.current === 'needle' && p.alive && performance.now() / 1000 > scopeBlockUntil;
+  } else {
+    semiLatch = false;
+    bloom = Math.max(0, bloom - dt * 0.85);
+  }
 }
 
 function updateCamera(dt) {
   const p = player;
   const zoom = ZOOM_STEPS[zoomIdx];
-  const targetFov = scoped ? 74 / zoom : 74;
+  const targetFov = scoped ? 74 / zoom : aiming ? 58 : 74;
   camera.fov += (targetFov - camera.fov) * Math.min(1, dt * 13);
   camera.updateProjectionMatrix();
   viewKick = Math.max(0, viewKick - dt * 0.42);
@@ -869,6 +894,7 @@ function updateHud(force = false) {
   $('healthFill').style.background = player.health > 52 ? 'var(--good)' : player.health > 25 ? '#ffd166' : 'var(--bad)';
   $('armor').textContent = player.loadout.armor > 0 ? `VEST ${Math.ceil(player.loadout.armor)}%` : 'NO VEST';
   $('vestFill').style.width = `${Math.max(0, Math.min(100, player.loadout.armor))}%`;
+  $('crosshair').style.transform = `scale(${1 + bloom * 0.9})`;
   document.body.classList.toggle('lowhp', player.alive && player.health <= 30 && (game.phase === 'live' || game.phase === 'end'));
   const chip = $('grenadeChip');
   chip.textContent = `✸ FRAG ×${player.loadout.grenades} · G`;
@@ -924,6 +950,7 @@ function switchWeapon(id) {
 }
 
 document.addEventListener('keydown', e => {
+  if (e.code === 'AltLeft' || e.code === 'AltRight') e.preventDefault();
   if (e.code === 'Tab') { e.preventDefault(); if (game.started) showScoreboard(); return; }
   keys.add(e.code);
   if (!player.alive) return;
@@ -981,44 +1008,57 @@ window.addEventListener('resize', () => {
 });
 
 let previous = performance.now();
+let accumulator = 0;
 let radarAt = 0;
+
+function stepSim(dt) {
+  const now = performance.now() / 1000;
+  finishReloads(now);
+  if (game.phase === 'buy') {
+    game.phaseTime -= dt;
+    if (game.phaseTime <= 0) { beginLive(); if (!TEST_MODE && document.pointerLockElement !== renderer.domElement) { game.paused = true; show('pauseScreen', true); } }
+  } else if (game.phase === 'live') {
+    game.roundTime -= dt;
+    if (player.alive) updatePlayer(dt);
+    for (const a of actors) if (!a.isPlayer) updateBot(a, dt, now);
+    updateGrenades(dt);
+    updateCapture(dt);
+    if (game.roundTime <= 0 && game.phase === 'live') endRound(TEAM.SLATE, 'Time expired — Slate held the yard.');
+  } else if (game.phase === 'end') {
+    game.phaseTime -= dt;
+    updateGrenades(dt);
+    for (const a of actors) if (!a.isPlayer) syncBotMesh(a, now);
+    if (game.phaseTime <= 0) finishRoundPause();
+  }
+}
+
 function animate() {
   requestAnimationFrame(animate);
   const nowMs = performance.now();
   const now = nowMs / 1000;
-  let dt = Math.min(0.05, (nowMs - previous) / 1000); previous = nowMs;
-  finishReloads(now);
+  let frameTime = Math.min(0.12, (nowMs - previous) / 1000); previous = nowMs;
+  noiseEvents = noiseEvents.filter(ev => now - ev.at < 1.5);
 
   if (!game.paused) {
-    if (game.phase === 'buy') {
-      game.phaseTime -= dt;
-      if (game.phaseTime <= 0) { beginLive(); if (!TEST_MODE && document.pointerLockElement !== renderer.domElement) { game.paused = true; show('pauseScreen', true); } }
-    } else if (game.phase === 'live') {
-      game.roundTime -= dt;
-      if (player.alive) updatePlayer(dt);
-      for (const a of actors) if (!a.isPlayer) updateBot(a, dt, now);
-      updateGrenades(dt);
-      updateCapture(dt);
-      if (game.roundTime <= 0 && game.phase === 'live') endRound(TEAM.SLATE, 'Time expired — Slate held the yard.');
-    } else if (game.phase === 'end') {
-      game.phaseTime -= dt;
-      updateGrenades(dt);
-      for (const a of actors) if (!a.isPlayer) syncBotMesh(a, now);
-      if (game.phaseTime <= 0) finishRoundPause();
+    accumulator += frameTime;
+    let steps = 0;
+    while (accumulator >= 1/60 && steps < 4) {
+      stepSim(1/60);
+      accumulator -= 1/60;
+      steps++;
     }
     updateExplosions(nowMs);
     updateDamageNumbers(nowMs);
-    // Effects continue through the short round-end beat.
     for (let i = tracers.length - 1; i >= 0; i--) if (nowMs > tracers[i].until) { scene.remove(tracers[i].line); tracers[i].line.geometry.dispose(); tracers[i].line.material.dispose(); tracers.splice(i, 1); }
     for (let i = sparks.length - 1; i >= 0; i--) {
       const s = sparks[i]; if (nowMs > s.until) { s.m.visible = false; sparks.splice(i, 1); continue; }
-      s.vy -= 7 * dt; s.m.position.x += s.vx * dt; s.m.position.y += s.vy * dt; s.m.position.z += s.vz * dt;
+      s.vy -= 7 * frameTime; s.m.position.x += s.vx * frameTime; s.m.position.y += s.vy * frameTime; s.m.position.z += s.vz * frameTime;
     }
-    world.beacon.rotation.y += dt * 1.6;
+    world.beacon.rotation.y += frameTime * 1.6;
     world.beacon.position.y = 3.9 + Math.sin(now * 2.2) * 0.12;
     world.pylonMat.emissiveIntensity = 0.65 + Math.sin(now * 2.4) * 0.22;
   }
-  updateCamera(game.paused ? 0.016 : dt);
+  updateCamera(game.paused ? 0.016 : frameTime);
   if (game.started || game.phase !== 'menu') updateHud();
   if (nowMs - radarAt > 110 && !$('hud').classList.contains('hidden')) { drawRadar(); radarAt = nowMs; }
   renderer.render(scene, camera);
