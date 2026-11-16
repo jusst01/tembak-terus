@@ -1,3 +1,8 @@
+/**
+ * Core game engine module for TEMBAK TERUS.
+ * Manages the complete match and round lifecycle, fixed-step bot simulation,
+ * weapon handling, combat mechanics, and live HUD updates.
+ */
 import * as THREE from 'three';
 import { BUY_ITEMS, ECONOMY, GRENADE, MATCH, TEAM, WEAPONS } from './config.js';
 import { SoundFX } from './audio.js';
@@ -1012,7 +1017,8 @@ let previous = performance.now();
 let accumulator = 0;
 let radarAt = 0;
 
-// Fixed-step simulation (60 Hz): the sim is deterministic and apart from rendering.
+// Advances gameplay logic in discrete fixed intervals,
+// while graphics rendering executes every animation frame.
 function stepSim(dt) {
   const now = performance.now() / 1000;
   finishReloads(now);
