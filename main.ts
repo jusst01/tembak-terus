@@ -1,3 +1,4 @@
+// TEMBAK TERUS entrypoint: builds the submission dossier and copies the game tree.
 /**
  * TEMBAK TERUS — ThreeJS FPS 02 entry.
  * Handover contract: Copies game/ and screenshots/ to MAKEFUN_OUTPUT_DIR,
