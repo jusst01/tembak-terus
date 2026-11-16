@@ -65,6 +65,7 @@ export class SoundFX {
 
   empty() { this.tone(1150, 0.045, 'square', 0.07); }
   reload() { this.tone(340, 0.06, 'square', 0.07); setTimeout(() => this.tone(520, 0.07, 'square', 0.08), 130); }
+  swing() { this.noise(0.13, 0.18, 700, 2200); this.tone(280, 0.08, 'triangle', 0.1, -140); }
   // Hit confirmation is deliberately layered so a hit is audible even when
   // the marker is missed: body = double tick, head = bright two-note ding.
   hit(head = false) {

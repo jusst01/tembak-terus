@@ -5,14 +5,18 @@ let nextId = 1;
 
 function weaponState(id) {
   const w = WEAPONS[id];
+  if (w.melee) return { id, magazine: 0, reserve: 0 };
   return { id, magazine: w.magazine, reserve: w.reserve };
 }
 
-export function freshLoadout() {
+export function freshLoadout(isPlayer = false) {
+  const owned = isPlayer ? new Set(['sidearm', 'knife']) : new Set(['sidearm']);
+  const states = { sidearm: weaponState('sidearm') };
+  if (isPlayer) states.knife = weaponState('knife');
   return {
-    owned: new Set(['sidearm']),
+    owned,
     current: 'sidearm',
-    states: { sidearm: weaponState('sidearm') },
+    states,
     armor: 0,
     grenades: 0,
   };
@@ -102,7 +106,7 @@ export function createActor({ name, team, isPlayer = false, scene }) {
     id: nextId++, name, team, isPlayer,
     pos: new THREE.Vector3(), velocityY: 0, yaw: 0, pitch: 0,
     radius: 0.42, eyeHeight: 1.62, health: 100, alive: true,
-    money: 800, kills: 0, deaths: 0, loadout: freshLoadout(),
+    money: 800, kills: 0, deaths: 0, loadout: freshLoadout(isPlayer),
     lastShotAt: -9, nextShotAt: 0, reloadUntil: 0, reloading: false,
     burstLeft: 0, nextBurstAt: 0, aimTime: 0, lastDamageAt: -9, lastAttacker: null,
     ai: {

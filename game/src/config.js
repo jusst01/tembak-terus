@@ -9,7 +9,7 @@ export const WEAPONS = {
     damage: 32, headMultiplier: 2.3, rpm: 360, automatic: false,
     magazine: 12, reserve: 72, reloadTime: 1.25, pellets: 1,
     spread: 0.011, movingSpread: 0.028, recoil: 0.011, range: 58,
-    falloffStart: 18, minDamageScale: 0.52, tracer: 0xffd166,
+    falloffStart: 18, minDamageScale: 0.52, tracer: 0xffd166, moveMult: 1,
     description: 'Free, honest and accurate when you give it a beat between shots.',
   },
   smg: {
@@ -17,7 +17,7 @@ export const WEAPONS = {
     damage: 25, headMultiplier: 1.9, rpm: 820, automatic: true,
     magazine: 32, reserve: 128, reloadTime: 1.85, pellets: 1,
     spread: 0.026, movingSpread: 0.052, recoil: 0.0075, range: 48,
-    falloffStart: 13, minDamageScale: 0.42, tracer: 0x8bd450,
+    falloffStart: 13, minDamageScale: 0.42, tracer: 0x8bd450, moveMult: 1,
     description: 'Close-range confidence. Eats corners and budgets at the same speed.',
   },
   shotgun: {
@@ -25,7 +25,7 @@ export const WEAPONS = {
     damage: 13, headMultiplier: 1.45, rpm: 76, automatic: false,
     magazine: 6, reserve: 30, reloadTime: 2.7, pellets: 8,
     spread: 0.082, movingSpread: 0.105, recoil: 0.045, range: 28,
-    falloffStart: 7, minDamageScale: 0.25, tracer: 0xff9f43,
+    falloffStart: 7, minDamageScale: 0.25, tracer: 0xff9f43, moveMult: 1,
     description: 'A doorway argument with eight pellets. Useless across the yard, decisive inside it.',
   },
   rifle: {
@@ -33,7 +33,7 @@ export const WEAPONS = {
     damage: 42, headMultiplier: 2.25, rpm: 610, automatic: true,
     magazine: 30, reserve: 90, reloadTime: 2.05, pellets: 1,
     spread: 0.014, movingSpread: 0.042, recoil: 0.014, range: 78,
-    falloffStart: 27, minDamageScale: 0.62, tracer: 0xff6b35,
+    falloffStart: 27, minDamageScale: 0.62, tracer: 0xff6b35, moveMult: 1,
     description: 'The round-winner. Rewards first-shot discipline more than trigger time.',
   },
   needle: {
@@ -41,8 +41,15 @@ export const WEAPONS = {
     damage: 108, headMultiplier: 1.6, rpm: 46, automatic: false,
     magazine: 5, reserve: 20, reloadTime: 2.8, pellets: 1,
     spread: 0.0015, movingSpread: 0.09, recoil: 0.075, range: 110,
-    falloffStart: 55, minDamageScale: 0.9, tracer: 0x9be7ff,
+    falloffStart: 55, minDamageScale: 0.9, tracer: 0x9be7ff, moveMult: 1,
     description: 'One body shot, one funeral. Right-click for the sniper scope (2×/4×/8×, scroll to zoom, hold Shift to steady your breath); never fire it on the run.',
+  },
+  knife: {
+    id: 'knife', slot: 6, name: 'Combat Knife', short: 'KNIFE', price: 0,
+    melee: true, damage: 55, headMultiplier: 2.0, rpm: 143, pellets: 1,
+    spread: 0.12, movingSpread: 0.12, recoil: 0, range: 2.3,
+    falloffStart: 2.3, minDamageScale: 1, tracer: 0, moveMult: 1.15,
+    description: 'Always there when diplomacy fails. Silent, swift, and costs nothing.',
   },
 };
 
@@ -63,6 +70,7 @@ export const GRENADE = {
 };
 
 export const BUY_ITEMS = [
+  { kind: 'weapon', id: 'knife' },
   { kind: 'weapon', id: 'smg' },
   { kind: 'weapon', id: 'shotgun' },
   { kind: 'weapon', id: 'rifle' },

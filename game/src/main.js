@@ -44,7 +44,7 @@ const game = {
 };
 const keys = new Set();
 let mouseDown = false, rightMouseDown = false, semiLatch = false;
-let bobPhase = 0, viewKick = 0, scoped = false, damageFlashUntil = 0;
+let bobPhase = 0, viewKick = 0, knifeSwingAnim = 0, scoped = false, damageFlashUntil = 0;
 // Noise bus: gunfire is information - nearby bots investigate (events pruned after 1.5 s).
 let aiming = false, aimSpreadScale = 1, bloom = 0, noiseEvents = [];
 let lastHudSecond = -1;
@@ -78,6 +78,16 @@ camera.add(viewGun);
 function rebuildViewGun() {
   viewGun.clear();
   const id = player.loadout.current;
+  if (id === 'knife') {
+    const dark = new THREE.MeshStandardMaterial({ color: 0x20282c, roughness: 0.42, metalness: 0.42 });
+    const bladeMat = new THREE.MeshStandardMaterial({ color: 0xd8dcde, roughness: 0.2, metalness: 0.85 });
+    const grip = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.22, 0.12), dark);
+    grip.position.set(0, -0.16, 0.12); grip.rotation.x = 0.35; viewGun.add(grip);
+    const blade = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.45, 0.015), bladeMat);
+    blade.position.set(0, 0.12, -0.12); blade.rotation.x = -0.1; viewGun.add(blade);
+    viewGun.position.set(0.29, -0.27, -0.58);
+    return;
+  }
   const dark = new THREE.MeshStandardMaterial({ color: 0x20282c, roughness: 0.42, metalness: 0.42 });
   const accent = new THREE.MeshStandardMaterial({ color: id === 'needle' ? 0x62b6cb : 0xff6b35, roughness: 0.38, emissive: id === 'needle' ? 0x1d5d70 : 0x5c1e08, emissiveIntensity: 0.7 });
   const bodyLen = id === 'shotgun' ? 0.72 : id === 'needle' ? 0.9 : id === 'sidearm' ? 0.42 : 0.66;
@@ -177,7 +187,7 @@ function topUpMagazines(actor) {
 
 function resetRoundLoadout(actor) {
   if (!actor.alive) {
-    actor.loadout = freshLoadout();
+    actor.loadout = freshLoadout(actor.isPlayer);
   }
   topUpMagazines(actor);
   // One free frag per round, up to the carry cap — the "refill per wave".
@@ -202,7 +212,7 @@ function resetActorsForRound() {
 
 function resetMatch() {
   game.scores.EMBER = 0; game.scores.SLATE = 0; game.round = 1; game.over = false; game.winner = null;
-  for (const a of actors) { a.money = ECONOMY.start; a.kills = 0; a.deaths = 0; a.alive = false; a.loadout = freshLoadout(); }
+  for (const a of actors) { a.money = ECONOMY.start; a.kills = 0; a.deaths = 0; a.alive = false; a.loadout = freshLoadout(a.isPlayer); }
   enterBuy();
 }
 
@@ -543,16 +553,19 @@ function fireActor(actor, baseDir) {
   const now = performance.now() / 1000;
   const w = weaponOf(actor), s = stateOf(actor);
   if (!actor.alive || game.phase !== 'live' || actor.reloading || now < actor.nextShotAt) return false;
-  if (s.magazine <= 0) { if (actor.isPlayer) sfx.empty(); startReload(actor); return false; }
+  if (!w.melee) {
+    if (s.magazine <= 0) { if (actor.isPlayer) sfx.empty(); startReload(actor); return false; }
+    s.magazine--;
+    if (actor.isPlayer) bloom = Math.min(1, bloom + (w.id === 'shotgun' ? 0.3 : 0.16));
+  } else {
+    if (actor.isPlayer) sfx.swing();
+  }
   actor.nextShotAt = now + 60 / w.rpm;
   actor.lastShotAt = now;
-  s.magazine--;
-
-  if (actor.isPlayer) bloom = Math.min(1, bloom + (w.id === 'shotgun' ? 0.3 : 0.16));
 
   const speed = Math.hypot(actor.ai?.vx || 0, actor.ai?.vz || 0);
-  const bloomSpread = actor.isPlayer ? bloom * 0.02 : 0;
-  const spread = ((w.spread + (speed > 0.6 ? w.movingSpread * Math.min(1, speed / 5) : 0) + (actor.ai?.crouching ? -w.spread * 0.3 : 0)) + bloomSpread) * (actor.isPlayer ? aimSpreadScale : 1);
+  const bloomSpread = (actor.isPlayer && !w.melee) ? bloom * 0.02 : 0;
+  const spread = w.melee ? 0.12 : ((w.spread + (speed > 0.6 ? w.movingSpread * Math.min(1, speed / 5) : 0) + (actor.ai?.crouching ? -w.spread * 0.3 : 0)) + bloomSpread) * (actor.isPlayer ? aimSpreadScale : 1);
 
   const origin = actor.isPlayer ? camera.position.clone() : eyeOf(actor, sV).addScaledVector(forwardOf(actor, sV2), 0.42).add(sV3.set(0, -0.22, 0));
   const muzzle = actor.isPlayer ? camera.position.clone().addScaledVector(baseDir, 0.7) : origin.clone();
@@ -571,37 +584,42 @@ function fireActor(actor, baseDir) {
     }
     const endDist = best ? best.distance : Math.min(w.range, wallDist);
     const end = origin.clone().addScaledVector(dir, endDist);
-    addTracer(muzzle, end, w.tracer);
+    if (!w.melee) addTracer(muzzle, end, w.tracer);
     if (best) {
-      const fall = best.distance <= w.falloffStart ? 1 : THREE.MathUtils.lerp(1, w.minDamageScale, Math.min(1, (best.distance - w.falloffStart) / Math.max(1, w.range - w.falloffStart)));
+      const fall = w.melee ? 1 : (best.distance <= w.falloffStart ? 1 : THREE.MathUtils.lerp(1, w.minDamageScale, Math.min(1, (best.distance - w.falloffStart) / Math.max(1, w.range - w.falloffStart))));
       const dealt = damageTarget(actor, best.target, w.damage * fall, best.zone, w);
       anyHit = dealt > 0 || anyHit;
       if (dealt > 0 && actor.isPlayer) spawnDamageNumber(end, dealt, best.zone, !best.target.alive);
       addSparks(end, best.zone === 'head' ? 9 : 5);
-    } else if (wallDist < Infinity) addSparks(end, 3);
+    } else if (!w.melee && wallDist < Infinity) addSparks(end, 3);
   }
   const distToPlayer = actor.pos.distanceTo(player.pos);
-  sfx.shot(w.id, actor.isPlayer ? 0 : distToPlayer);
-
-  let r = (w.id === 'needle' || w.id === 'rifle') ? 34 : (w.id === 'smg' || w.id === 'sidearm') ? 26 : 40;
-  if (actor.isPlayer && (keys.has('AltLeft') || keys.has('AltRight'))) r /= 2;
-  noiseEvents.push({ x: actor.pos.x, z: actor.pos.z, r, team: actor.team, at: performance.now() / 1000 });
+  if (!w.melee) {
+    sfx.shot(w.id, actor.isPlayer ? 0 : distToPlayer);
+    let r = (w.id === 'needle' || w.id === 'rifle') ? 34 : (w.id === 'smg' || w.id === 'sidearm') ? 26 : 40;
+    if (actor.isPlayer && (keys.has('AltLeft') || keys.has('AltRight'))) r /= 2;
+    noiseEvents.push({ x: actor.pos.x, z: actor.pos.z, r, team: actor.team, at: performance.now() / 1000 });
+  }
 
   if (actor.isPlayer) {
-    const recoilScale = aiming ? 0.85 : 1;
-    actor.pitch = Math.min(1.45, actor.pitch + w.recoil * 0.62 * recoilScale);
-    viewKick = Math.min(0.09, viewKick + w.recoil * 1.9 * recoilScale);
-    // The Needle's bolt cycle drops you out of the scope for a beat after
-    // every shot — you re-acquire the target instead of camping the glass.
-    if (w.id === 'needle') scopeBlockUntil = performance.now() / 1000 + 0.55;
-    if (s.magazine === 0) startReload(actor);
+    if (w.melee) {
+      knifeSwingAnim = 0.22;
+    } else {
+      const recoilScale = aiming ? 0.85 : 1;
+      actor.pitch = Math.min(1.45, actor.pitch + w.recoil * 0.62 * recoilScale);
+      viewKick = Math.min(0.09, viewKick + w.recoil * 1.9 * recoilScale);
+      // The Needle's bolt cycle drops you out of the scope for a beat after
+      // every shot — you re-acquire the target instead of camping the glass.
+      if (w.id === 'needle') scopeBlockUntil = performance.now() / 1000 + 0.55;
+      if (s.magazine === 0) startReload(actor);
+    }
   }
   return true;
 }
 
 function startReload(actor) {
   const w = weaponOf(actor), s = stateOf(actor);
-  if (actor.reloading || s.magazine >= w.magazine || s.reserve <= 0) return;
+  if (w.melee || actor.reloading || s.magazine >= w.magazine || s.reserve <= 0) return;
   actor.reloading = true;
   actor.reloadUntil = performance.now() / 1000 + w.reloadTime;
   if (actor.isPlayer) sfx.reload();
@@ -802,7 +820,9 @@ function updatePlayer(dt) {
   let iz = (keys.has('KeyW') ? 1 : 0) - (keys.has('KeyS') ? 1 : 0);
   const len = Math.hypot(ix, iz) || 1; ix /= len; iz /= len;
   const sprint = (keys.has('ShiftLeft') || keys.has('ShiftRight')) && iz > 0 && !p.ai.crouching && !aiming && !(keys.has('AltLeft') || keys.has('AltRight'));
-  const speed = (p.ai.crouching ? 2.55 : (keys.has('AltLeft') || keys.has('AltRight')) ? 2.1 : sprint ? 6.25 : 4.65) * (aiming ? 0.55 : 1);
+  const w = weaponOf(p);
+  const moveMult = w.moveMult || 1;
+  const speed = (p.ai.crouching ? 2.55 : (keys.has('AltLeft') || keys.has('AltRight')) ? 2.1 : sprint ? 6.25 : 4.65) * (aiming ? 0.55 : 1) * moveMult;
   const f = forwardOf(p), r = new THREE.Vector3(Math.cos(p.yaw), 0, -Math.sin(p.yaw));
   const wish = new THREE.Vector3().addScaledVector(f, iz).addScaledVector(r, ix);
   if (wish.lengthSq() > 0) wish.normalize();
@@ -863,6 +883,7 @@ function updateCamera(dt) {
   } else {
     swayT = 0; breath = Math.min(1, breath + dt / 2);
   }
+  knifeSwingAnim = Math.max(0, knifeSwingAnim - dt);
   shakeAmp = Math.max(0, shakeAmp - dt * 0.055);
   const shakeX = (Math.random() - 0.5) * 2 * shakeAmp;
   const shakeY = (Math.random() - 0.5) * 2 * shakeAmp;
@@ -875,6 +896,13 @@ function updateCamera(dt) {
   }
   viewGun.position.z = -0.58 + viewKick;
   viewGun.position.y = -0.27 + Math.sin(bobPhase * 2) * 0.008 - viewKick * 0.35;
+  if (player.loadout.current === 'knife' && knifeSwingAnim > 0) {
+    const prog = knifeSwingAnim / 0.22;
+    viewGun.rotation.x = -prog * 0.45;
+    viewGun.position.z += prog * 0.18;
+  } else {
+    viewGun.rotation.x = 0;
+  }
   viewGun.visible = p.alive && game.phase !== 'buy' && !scoped;
   const showScope = scoped && p.alive && game.phase === 'live';
   $('scopeOverlay').classList.toggle('hidden', !showScope);
@@ -908,7 +936,11 @@ function updateHud(force = false) {
   $('money').textContent = `$${player.money}`;
   const w = weaponOf(player), s = stateOf(player);
   $('weaponName').textContent = player.reloading ? `${w.name} — RELOADING` : w.name;
-  $('ammo').innerHTML = `${s.magazine} <span>/ ${s.reserve}</span>`;
+  if (w.melee) {
+    $('ammo').innerHTML = 'MELEE';
+  } else {
+    $('ammo').innerHTML = `${s.magazine} <span>/ ${s.reserve}</span>`;
+  }
   const slots = $('weaponSlots'); slots.innerHTML = '';
   for (const id of Object.values(WEAPONS).sort((a, b) => a.slot - b.slot)) {
     if (!player.loadout.owned.has(id.id)) continue;
@@ -962,7 +994,7 @@ document.addEventListener('keydown', e => {
   if (!player.alive) return;
   if (e.code === 'KeyR') startReload(player);
   if (e.code === 'KeyG') throwGrenade();
-  const slot = ['Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5'].indexOf(e.code) + 1;
+  const slot = ['Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5', 'Digit6'].indexOf(e.code) + 1;
   if (slot) {
     const id = Object.values(WEAPONS).find(w => w.slot === slot)?.id;
     if (id) switchWeapon(id);
