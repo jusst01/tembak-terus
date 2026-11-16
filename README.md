@@ -1,5 +1,9 @@
 # TEMBAK TERUS
 
+[![make.fun · threejs-fps-02](https://make.fun/badge/threejs-fps-02.svg)](https://make.fun/bounty/threejs-fps-02?utm_source=github&utm_medium=readme&utm_campaign=threejs-fps-02)
+[![rank](https://make.fun/badge/threejs-fps-02/jusst01/tembak-terus/rank.svg)](https://make.fun/bounty/threejs-fps-02/leaderboard?utm_source=github&utm_medium=readme&utm_campaign=threejs-fps-02)
+[![reward](https://make.fun/badge/threejs-fps-02/jusst01/tembak-terus/reward.svg)](https://make.fun/bounty/threejs-fps-02/leaderboard?utm_source=github&utm_medium=readme&utm_campaign=threejs-fps-02)
+
 A Counter-Strike-style round-based tactical FPS built with three.js. Hold the Saltglass Yard with the Ember Watch against the Slate Union in 4v4 matches against bots with A* waypoint navigation and a noise/hearing system. Eliminate the opposing team or capture the central relay for eight seconds to win the round. Seven rounds wins the match. Money earned in buy phases funds your loadout — rifles, SMGs, shotguns, scoped Needle railguns, frag grenades, armor, and utility from the buy menu.
 
 ## Features
