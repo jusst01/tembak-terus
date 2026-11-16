@@ -1,0 +1,8 @@
+Poly Haven — licence evidence
+Source: https://polyhaven.com/license (fetched 2026-11-16)
+Excerpt: "All assets (HDRIs, textures and 3D models) on this site are the
+original work of Poly Haven staff, or artists who willingly and directly
+donate/sell their work to Poly Haven. Our assets are all licensed as CC0,
+which is effectively Public Domain even in jurisdictions that do not
+support the Public Domain."
+All Poly Haven files in this folder were downloaded via api.polyhaven.com.
