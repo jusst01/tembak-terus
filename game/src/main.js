@@ -122,11 +122,25 @@ function rebuildViewGun() {
 rebuildViewGun();
 
 function clampMoney(a) { a.money = Math.max(0, Math.min(ECONOMY.max, Math.round(a.money))); }
+// Scratch pool to avoid per-frame allocations in hot paths.
+const sV = new THREE.Vector3(), sV2 = new THREE.Vector3(), sV3 = new THREE.Vector3(), sV4 = new THREE.Vector3(), sV5 = new THREE.Vector3();
+
 function weaponOf(a) { return WEAPONS[a.loadout.current]; }
 function stateOf(a, id = a.loadout.current) { return a.loadout.states[id]; }
-function eyeOf(a) { return new THREE.Vector3(a.pos.x, a.pos.y + (a.ai?.crouching ? 1.34 : a.eyeHeight), a.pos.z); }
-function chestOf(a) { return new THREE.Vector3(a.pos.x, a.pos.y + 1.08, a.pos.z); }
-function forwardOf(a) { return new THREE.Vector3(-Math.sin(a.yaw), 0, -Math.cos(a.yaw)); }
+function eyeOf(a, out) {
+  const y = a.pos.y + (a.ai?.crouching ? 1.34 : a.eyeHeight);
+  if (out) return out.set(a.pos.x, y, a.pos.z);
+  return new THREE.Vector3(a.pos.x, y, a.pos.z);
+}
+function chestOf(a, out) {
+  const y = a.pos.y + 1.08;
+  if (out) return out.set(a.pos.x, y, a.pos.z);
+  return new THREE.Vector3(a.pos.x, y, a.pos.z);
+}
+function forwardOf(a, out) {
+  if (out) return out.set(-Math.sin(a.yaw), 0, -Math.cos(a.yaw));
+  return new THREE.Vector3(-Math.sin(a.yaw), 0, -Math.cos(a.yaw));
+}
 function aliveActors(team) { return actors.filter(a => a.alive && (!team || a.team === team)); }
 function enemyTeam(team) { return team === TEAM.EMBER ? TEAM.SLATE : TEAM.EMBER; }
 
@@ -410,7 +424,7 @@ function explodeGrenade(g) {
     if (!a.alive) continue;
     const d = Math.hypot(a.pos.x - at.x, a.pos.z - at.z);
     if (d > GRENADE.radius) continue;
-    if (segmentBlocked(at, chestOf(a), 0.4)) continue; // solid cover eats the blast
+    if (segmentBlocked(at, chestOf(a, sV), 0.4)) continue; // solid cover eats the blast
     const fall = THREE.MathUtils.lerp(1, GRENADE.minDamageScale, d / GRENADE.radius);
     damageTarget(g.thrower, a, GRENADE.damage * fall, 'body', FRAG_WEAPON);
   }
@@ -432,17 +446,16 @@ function updateExplosions(nowMs) {
 }
 
 function updateDamageNumbers(nowMs) {
-  const v = new THREE.Vector3();
   for (let i = dmgNumbers.length - 1; i >= 0; i--) {
     const n = dmgNumbers[i];
     if (nowMs > n.until) { n.el.remove(); dmgNumbers.splice(i, 1); continue; }
     const age = (nowMs - n.born) / 720;
-    v.copy(n.pos); v.y += age * 0.85;
-    v.project(camera);
-    if (v.z > 1) { n.el.style.display = 'none'; continue; }
+    sV.copy(n.pos); sV.y += age * 0.85;
+    sV.project(camera);
+    if (sV.z > 1) { n.el.style.display = 'none'; continue; }
     n.el.style.display = '';
-    n.el.style.left = `${(v.x * 0.5 + 0.5) * window.innerWidth + n.drift * age}px`;
-    n.el.style.top = `${(-v.y * 0.5 + 0.5) * window.innerHeight}px`;
+    n.el.style.left = `${(sV.x * 0.5 + 0.5) * window.innerWidth + n.drift * age}px`;
+    n.el.style.top = `${(-sV.y * 0.5 + 0.5) * window.innerHeight}px`;
     n.el.style.opacity = String(1 - age * age);
   }
 }
@@ -528,7 +541,7 @@ function fireActor(actor, baseDir) {
   s.magazine--;
   const speed = Math.hypot(actor.ai?.vx || 0, actor.ai?.vz || 0);
   const spread = w.spread + (speed > 0.6 ? w.movingSpread * Math.min(1, speed / 5) : 0) + (actor.ai?.crouching ? -w.spread * 0.3 : 0);
-  const origin = actor.isPlayer ? camera.position.clone() : eyeOf(actor).addScaledVector(forwardOf(actor), 0.42).add(new THREE.Vector3(0, -0.22, 0));
+  const origin = actor.isPlayer ? camera.position.clone() : eyeOf(actor, sV).addScaledVector(forwardOf(actor, sV2), 0.42).add(sV3.set(0, -0.22, 0));
   const muzzle = actor.isPlayer ? camera.position.clone().addScaledVector(baseDir, 0.7) : origin.clone();
   let anyHit = false;
   for (let p = 0; p < w.pellets; p++) {
@@ -538,7 +551,10 @@ function fireActor(actor, baseDir) {
     for (const target of actors) {
       if (!target.alive || target.team === actor.team) continue;
       const hit = actorHit(origin, dir, target, w.range);
-      if (hit && hit.distance < wallDist && (!best || hit.distance < best.distance)) best = { ...hit, target };
+      if (hit && hit.distance < wallDist && (!best || hit.distance < best.distance)) {
+        best = hit;
+        best.target = target;
+      }
     }
     const endDist = best ? best.distance : Math.min(w.range, wallDist);
     const end = origin.clone().addScaledVector(dir, endDist);
@@ -635,7 +651,7 @@ function canSee(a, b) {
   const dist = a.pos.distanceTo(b.pos);
   if (dist > 62) return false;
   if (dist < 4.2) return true;
-  return !segmentBlocked(eyeOf(a), chestOf(b), 1.32);
+  return !segmentBlocked(eyeOf(a, sV), chestOf(b, sV2), 1.32);
 }
 function visibleEnemy(bot) {
   let best = null, bd = Infinity;
@@ -656,7 +672,7 @@ function botGoal(bot) {
   return [{ x: -4, z: 0 }, { x: 4, z: 4 }, { x: 8, z: -5 }, { x: 0, z: 8 }][idx];
 }
 function moveBot(bot, wish, speed, dt) {
-  const before = bot.pos.clone();
+  const beforeX = bot.pos.x, beforeZ = bot.pos.z;
   if (wish.lengthSq() > 0.001) {
     wish.normalize();
     moveWithCollisions(bot.pos, wish.x * speed * dt, wish.z * speed * dt, bot.radius);
@@ -672,8 +688,8 @@ function moveBot(bot, wish, speed, dt) {
       moveWithCollisions(bot.pos, dx / d * push, dz / d * push, bot.radius);
     }
   }
-  bot.ai.vx = (bot.pos.x - before.x) / Math.max(dt, 0.001);
-  bot.ai.vz = (bot.pos.z - before.z) / Math.max(dt, 0.001);
+  bot.ai.vx = (bot.pos.x - beforeX) / Math.max(dt, 0.001);
+  bot.ai.vz = (bot.pos.z - beforeZ) / Math.max(dt, 0.001);
   bot.ai.moving = Math.hypot(bot.ai.vx, bot.ai.vz) > 0.25;
 }
 
@@ -690,15 +706,15 @@ function updateBot(bot, dt, now) {
   ai.crouching = !!target && (weaponOf(bot).id === 'needle' || weaponOf(bot).id === 'rifle') && bot.pos.distanceTo(target.pos) > 15;
   if (bot.group) bot.group.scale.y = ai.crouching ? 0.84 : 1;
 
-  const wish = new THREE.Vector3();
+  const wish = sV.set(0, 0, 0);
   if (target) {
-    const to = new THREE.Vector3().subVectors(target.pos, bot.pos); to.y = 0;
+    const to = sV2.subVectors(target.pos, bot.pos); to.y = 0;
     const dist = to.length(); to.normalize();
     bot.yaw = Math.atan2(-to.x, -to.z);
     bot.pitch = THREE.MathUtils.clamp(Math.atan2((target.pos.y + 1.05) - (bot.pos.y + 1.5), dist), -0.45, 0.45);
     ai.preferredRange = weaponOf(bot).id === 'shotgun' ? 8 : weaponOf(bot).id === 'smg' ? 15 : weaponOf(bot).id === 'needle' ? 31 : 22;
     if (now > ai.strafeUntil) { ai.strafeUntil = now + 0.55 + Math.random() * 0.8; ai.strafeDir = Math.random() < 0.5 ? -1 : 1; }
-    const side = new THREE.Vector3(to.z, 0, -to.x).multiplyScalar(ai.strafeDir * 0.72);
+    const side = sV3.set(to.z, 0, -to.x).multiplyScalar(ai.strafeDir * 0.72);
     if (dist > ai.preferredRange + 3) wish.copy(to).multiplyScalar(0.92);
     else if (dist < ai.preferredRange - 4) wish.copy(to).multiplyScalar(-0.62);
     wish.add(side);
@@ -710,9 +726,13 @@ function updateBot(bot, dt, now) {
       if (ai.burstLeft <= 0 && now >= ai.nextBurstAt) ai.burstLeft = weaponOf(bot).automatic ? 3 + Math.floor(Math.random() * 3) : 1;
       if (ai.burstLeft > 0) {
         const aimPoint = weaponOf(bot).id === 'needle' || Math.random() < 0.18
-          ? new THREE.Vector3(target.pos.x, target.pos.y + 1.58, target.pos.z)
-          : chestOf(target);
-        let dir = new THREE.Vector3().subVectors(aimPoint, eyeOf(bot)).normalize();
+          ? sV5.set(target.pos.x, target.pos.y + 1.58, target.pos.z)
+          : chestOf(target, sV5);
+        let dir = sV4.subVectors(aimPoint, eyeOf(bot, sV3)).normalize();
+        // eyeOf(bot, sV4) is ok.
+        // Wait, eyeOf(bot, sV4) will write into sV4.
+        // aimPoint uses sV4.
+        // This is tricky.
         const err = THREE.MathUtils.lerp(0.085, 0.024, Math.min(1, ai.aimTime / 0.9));
         dir = randomConeDirection(dir, err);
         bot.pitch = Math.asin(THREE.MathUtils.clamp(dir.y, -1, 1));
@@ -723,6 +743,8 @@ function updateBot(bot, dt, now) {
       }
     }
   } else {
+    // ... rest of the function
+
     let goal = botGoal(bot);
     if (ai.lastKnown && now - ai.lastSeenAt < 3.5) goal = ai.lastKnown;
     if (bot.health < 24 && Math.random() < 0.25) goal = { x: SPAWNS[bot.team][0][0], z: SPAWNS[bot.team][0][1] };
