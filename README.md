@@ -1,68 +1,52 @@
 # TEMBAK TERUS
 
-A round-based tactical FPS for the browser, built with three.js. You hold the
-Saltglass relay with the Ember Watch against Slate Union in 4 v 4 rounds:
-eliminate the other team, or control the central relay for eight seconds, to
-win the round. Seven rounds wins the match. Money earned in one round buys the
-next round's edge — rifles, an SMG, a shotgun, the scoped Needle, frag grenades
-and vests from the buy menu.
+A Counter-Strike-style round-based tactical FPS built with three.js. Hold the Saltglass Yard with the Ember Watch against the Slate Union in 4v4 matches against bots with A* waypoint navigation and a noise/hearing system. Eliminate the opposing team or capture the central relay for eight seconds to win the round. Seven rounds wins the match. Money earned in buy phases funds your loadout — rifles, SMGs, shotguns, scoped Needle railguns, frag grenades, armor, and utility from the buy menu.
 
-Accuracy matters more than speed: standing still and tapping beats panic
-spray, and movement, recoil and range all change the cone. Bots follow
-waypoint routes, hold positions, react to sight and sound, and play the same
-economy you do. Hitmarkers, damage numbers, kill bursts and overhead health
-bars make every hit readable; the Needle sniper scopes at 2×/4×/8× with
-breath sway.
+## Features
+
+- **Tactical 4v4 Matches**: Ember Watch vs. Slate Union on the Saltglass Yard arena.
+- **Round-Based Economy**: Buy weapons, vests, and grenades between rounds; surviving weapons carry over.
+- **Advanced Gunplay**: Aim-down-sights (ADS) on every weapon, bloom/recoil spread model, hitmarkers, floating damage numbers, and overhead HP bars.
+- **Scoped Railgun & Breath Control**: The Needle railgun features 2×/4×/8× zoom (scroll wheel) and Shift breath-hold stabilization.
+- **A* Bot Navigation & Noise Bus**: Bots navigate waypoint graphs, react to gunfire noise events, and coordinate flanks.
+- **Objective Play**: Dual win conditions — wipe out the enemy team or capture the relay.
+- **Completely Self-Contained**: Vendored three.js 0.187.0, zero external network requests, procedural audio and art, ~2.2 MB total.
 
 ## Controls
 
-- **W A S D** move · **Mouse** look · **Click** fire · **R** reload
-- **G** throw grenade · **B** buy menu · **1–5** weapons
-- **Shift** run · **Ctrl** crouch · **Space** jump
-- **Tab** scoreboard · **Esc** pause
-- Needle scope: **Right-click** aim · **Scroll** while scoped switches
-  2×/4×/8× zoom · hold **Shift** while scoped to hold your breath
+- **W A S D**: Move
+- **Mouse**: Look
+- **Click**: Fire
+- **Right-click**: Aim down sights / scope (Needle railgun)
+- **R**: Reload
+- **G**: Throw frag grenade
+- **1–5**: Select weapon
+- **Wheel**: Switch weapons (or adjust scope zoom while scoped)
+- **Shift**: Sprint / hold breath while scoped
+- **Alt**: Walk (quiet movement)
+- **Ctrl**: Crouch
+- **Space**: Jump
+- **Tab**: Scoreboard
+- **Esc**: Pause / menu
 
-## Run it
+## Run It
 
 ```sh
 node serve.ts            # Node 22, standard library only
 # then open http://localhost:8080 in desktop Chrome
 ```
 
-The game is plain static files under `game/` (ES modules, no build step) and
-plays fully offline against bots — it makes no network request. `main.ts` is
-the handover program: it copies `game/` and `screenshots/` to the output
-directory and writes the dossier with `vendor/makefun-threejs.ts`.
+The game consists of plain static files under `game/` (ES modules, no build step) and plays fully offline against bots.
 
-## How it is built
+## Module Map
 
-- `game/src/config.js` — weapons, economy, match and team tuning in one place
-- `game/src/world.js` — the Saltglass arena: lanes, cover, the relay ring,
-  collision and the waypoint graph the bots navigate
-- `game/src/actors.js` — players and bots: loadouts, health, hit zones, and
-  the animated character rigs that replaced the old procedural bodies
-- `game/src/audio.js` — WebAudio synth sounds layered with recorded SFX files
-- `game/src/assets.js` — the glTF/texture loading layer for the real assets
-- `game/src/main.js` — the match loop: rounds, buy phase, gunplay, grenades,
-  the scoped Needle, HUD and screenshot mode (`?shot=start|play|end`)
+- `game/src/config.js` — Weapons, economy, match tuning, and team data.
+- `game/src/world.js` — Saltglass arena layout, cover colliders, relay ring, and A* waypoint graph.
+- `game/src/actors.js` — Player and bot character rigs, loadouts, health, and hit zones.
+- `game/src/audio.js` — Procedural WebAudio sound effects.
+- `game/src/main.js` — Core game flow, fixed-step 60 Hz deterministic simulation, gunplay, grenades, and HUD.
 
-Enemy bots are real rigged characters (Soldier, Punk, Adventurer) with
-locomotion, gun, hit-react and death animation states wired to their
-behaviour; they carry blaster models and throw the same frag grenade you do.
+## License & Credits
 
-## Asset credits
-
-- Characters: **Quaternius — Ultimate Modular Males**, CC0 1.0
-  (https://creativecommons.org/publicdomain/zero/1.0/)
-- Weapons and sound effects: **Kenney** (Blaster Kit, Sci-Fi Sounds, Impact
-  Sounds), CC0
-- Environment textures (metal plate, container side, concrete panels):
-  **Poly Haven**, CC0
-- three.js 0.187.0, MIT License (vendored under `game/`)
-
-Entry for [threejs-fps-02](https://make.fun/c/threejs-fps-02) on make.fun.
-
-![threejs-fps-02](https://make.fun/badge/threejs-fps-02.svg)
-![rank](https://make.fun/badge/threejs-fps-02/jusst01/tembak-terus/rank.svg)
-![reward](https://make.fun/badge/threejs-fps-02/jusst01/tembak-terus/reward.svg)
+- three.js 0.187.0 (vendored byte-for-byte under `game/`, MIT License).
+- Entry for [threejs-fps-02](https://make.fun/c/threejs-fps-02) on make.fun.

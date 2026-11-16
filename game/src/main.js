@@ -40,6 +40,7 @@ const game = {
 const keys = new Set();
 let mouseDown = false, rightMouseDown = false, semiLatch = false;
 let bobPhase = 0, viewKick = 0, scoped = false, damageFlashUntil = 0;
+// Noise bus: gunfire is information - nearby bots investigate (events pruned after 1.5 s).
 let aiming = false, aimSpreadScale = 1, bloom = 0, noiseEvents = [];
 let lastHudSecond = -1;
 // Sniper scope state: zoom steps, a short un-scope beat while the bolt
@@ -751,7 +752,7 @@ function updateBot(bot, dt, now) {
           ? sV5.set(target.pos.x, target.pos.y + 1.58, target.pos.z)
           : chestOf(target, sV5);
         let dir = sV4.subVectors(aimPoint, eyeOf(bot, sV3)).normalize();
-        // aimPoint uses sV4.
+        // dir = aimPoint - eye, all in scratch vectors.
         const err = THREE.MathUtils.lerp(0.085, 0.024, Math.min(1, ai.aimTime / 0.9));
         dir = randomConeDirection(dir, err);
         bot.pitch = Math.asin(THREE.MathUtils.clamp(dir.y, -1, 1));
@@ -894,7 +895,7 @@ function updateHud(force = false) {
   $('healthFill').style.background = player.health > 52 ? 'var(--good)' : player.health > 25 ? '#ffd166' : 'var(--bad)';
   $('armor').textContent = player.loadout.armor > 0 ? `VEST ${Math.ceil(player.loadout.armor)}%` : 'NO VEST';
   $('vestFill').style.width = `${Math.max(0, Math.min(100, player.loadout.armor))}%`;
-  $('crosshair').style.transform = `scale(${1 + bloom * 0.9})`;
+  $('crosshair').style.transform = `translate(-50%, -50%) scale(${1 + bloom * 0.9})`;
   document.body.classList.toggle('lowhp', player.alive && player.health <= 30 && (game.phase === 'live' || game.phase === 'end'));
   const chip = $('grenadeChip');
   chip.textContent = `✸ FRAG ×${player.loadout.grenades} · G`;
@@ -1011,6 +1012,7 @@ let previous = performance.now();
 let accumulator = 0;
 let radarAt = 0;
 
+// Fixed-step simulation (60 Hz): the sim is deterministic and apart from rendering.
 function stepSim(dt) {
   const now = performance.now() / 1000;
   finishReloads(now);
